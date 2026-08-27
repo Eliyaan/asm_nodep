@@ -23,32 +23,25 @@ iterate extern_name,\
 	extrn extern_name 
 end iterate
 
-macro linux_syscall number*, rdi_val, rsi_val, rdx_val, r10_val, r8_val, r9_val
+macro linux_syscall number*, args&
 	mov rax,number
-	match ,rdi_val ; check if the argument is empty or not
-	else
-		mov rdi,rdi_val
-		match ,rsi_val
+	iterate arg, args
+		if 1=%
+			mov rdi,arg
+		else if 2,%
+			mov rsi,arg
+		else if 3,%
+			mov rdx,arg
+		else if 4,%
+			mov r10,arg
+		else if 5,%
+			mov r8,arg
+		else if 6,%
+			mov r9,arg
 		else
-			mov rsi,rsi_val
-			match ,rdx_val
-			else
-				mov rdx,rdx_val
-				match ,r10_val
-				else
-					mov r10,r10_val
-					match ,r8_val
-					else
-						mov r8,r8_val
-						match ,r9_val
-						else
-							mov r9,r9_val
-						end match
-					end match
-				end match
-			end match
-		end match
-	end match
+			assert 0 > %% ; too many arguments
+		end if
+	end iterate 
 	syscall
 end macro
 
