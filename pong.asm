@@ -25,24 +25,24 @@ end iterate
 
 macro linux_syscall number*, rdi_val, rsi_val, rdx_val, r10_val, r8_val, r9_val
 	mov rax,number
-	if ~ `rdi_val eq ''
+	match ,rdi_val
 		mov rdi,rdi_val
-		if ~ `rsi_val eq ''
+		match ,rsi_val
 			mov rsi,rsi_val
-			if ~ `rdx_val eq '' 
+			match ,rdx_val
 				mov rdx,rdx_val
-				if ~ `r10_val eq '' 
+				match ,r10_val
 					mov r10,r10_val
-					if ~ `r8_val eq '' 
+					match ,r8_val
 						mov r8,r8_val
-						if ~ `r9_val eq '' 
+						match ,r9_val
 							mov r9,r9_val
-						end if
-					end if
-				end if
-			end if
-		end if
-	end if
+						end match
+					end match
+				end match
+			end match
+		end match
+	end match
 	syscall
 end macro
 
@@ -109,22 +109,13 @@ _start:
 	mov r14,-1.0
 
 mainLoop:
-	mov rdi,[window]
-	lea rsi,[width]
-	lea rdx,[height]
-	call glfwGetFramebufferSize
+	linux_fn_call glfwGetFramebufferSize,[window],[width],[height]
 	
-	mov rdi,0
-	mov rsi,0
-	mov rdx,[width]
-	mov rcx,[height]
-	call glViewport
+	linux_fn_call glViewport,0,0,[width],[height]
 
-	mov rdi,GL_COLOR_BUFFER_BIT
-	call glClear
+	linux_fn_call glClear,GL_COLOR_BUFFER_BIT
 
-	mov rdi,GL_TRIANGLES
-	call glBegin
+	linux_fn_call glBegin,GL_TRIANGLES
 
 	movq xmm0, r13
 	movq xmm1, r12
@@ -153,22 +144,19 @@ mainLoop:
 	movq xmm1, r13
 	call glVertex2f
 	
-	call glEnd
+	linux_fn_call glEnd
 
-	mov rdi,[window]
-	call glfwSwapBuffers
+	linux_fn_call glfwSwapBuffers,[window]
 
-	call glfwPollEvents
+	linux_fn_call glfwPollEvents
 
-	mov rdi,[window]
-	call glfwWindowShouldClose
+	linux_fn_call glfwWindowShouldClose,[window]
 
 	cmp rax,0
 	je mainLoop
 
-	call glfwTerminate
+	linux_fn_call glfwTerminate
 
-	; sys_exit
 	linux_syscall_exit 0 
 
 	
