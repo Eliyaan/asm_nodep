@@ -26,16 +26,22 @@ end iterate
 macro linux_syscall number*, rdi_val, rsi_val, rdx_val, r10_val, r8_val, r9_val
 	mov rax,number
 	match ,rdi_val
+	else
 		mov rdi,rdi_val
 		match ,rsi_val
+		else
 			mov rsi,rsi_val
 			match ,rdx_val
+			else
 				mov rdx,rdx_val
 				match ,r10_val
+				else
 					mov r10,r10_val
 					match ,r8_val
+					else
 						mov r8,r8_val
 						match ,r9_val
+						else
 							mov r9,r9_val
 						end match
 					end match
@@ -51,24 +57,30 @@ macro linux_syscall_exit exit_code
 end macro
 
 macro linux_fn_call name*, rdi_val, rsi_val, rdx_val, rcx_val, r8_val, r9_val
-	if ~ `rdi_val eq ''
+	match ,rdi_val
+	else
 		mov rdi,rdi_val
-		if ~ `rsi_val eq ''
+		match ,rsi_val
+		else
 			mov rsi,rsi_val
-			if ~ `rdx_val eq '' 
+			match ,rdx_val
+			else
 				mov rdx,rdx_val
-				if ~ `rcx_val eq '' 
+				match ,rcx_val
+				else
 					mov rcx,rcx_val
-					if ~ `r8_val eq '' 
+					match ,r8_val
+					else
 						mov r8,r8_val
-						if ~ `r9_val eq '' 
+						match ,r9_val
+						else
 							mov r9,r9_val
-						end if
-					end if
-				end if
-			end if
-		end if
-	end if
+						end match
+					end match
+				end match
+			end match
+		end match
+	end match
 	call name
 end macro
 
