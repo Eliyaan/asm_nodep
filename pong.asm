@@ -25,7 +25,7 @@ end iterate
 
 macro linux_syscall number*, rdi_val, rsi_val, rdx_val, r10_val, r8_val, r9_val
 	mov rax,number
-	match ,rdi_val
+	match ,rdi_val ; check if the argument is empty or not
 	else
 		mov rdi,rdi_val
 		match ,rsi_val
@@ -121,7 +121,10 @@ _start:
 	mov r14,-1.0
 
 mainLoop:
-	linux_fn_call glfwGetFramebufferSize,[window],[width],[height]
+	mov rdi,[window]
+	lea rsi,[width]
+	lea rdx,[height]
+	call glfwGetFramebufferSize
 	
 	linux_fn_call glViewport,0,0,[width],[height]
 
