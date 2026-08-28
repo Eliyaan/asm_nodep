@@ -28,15 +28,15 @@ macro linux_syscall number*, args&
 	iterate arg, args
 		if 1=%
 			mov rdi,arg
-		else if 2,%
+		else if 2=%
 			mov rsi,arg
-		else if 3,%
+		else if 3=%
 			mov rdx,arg
-		else if 4,%
+		else if 4=%
 			mov r10,arg
-		else if 5,%
+		else if 5=%
 			mov r8,arg
-		else if 6,%
+		else if 6=%
 			mov r9,arg
 		else
 			assert 0 > %% ; too many arguments
@@ -49,31 +49,24 @@ macro linux_syscall_exit exit_code
 	linux_syscall 60, exit_code
 end macro
 
-macro linux_fn_call name*, rdi_val, rsi_val, rdx_val, rcx_val, r8_val, r9_val
-	match ,rdi_val
-	else
-		mov rdi,rdi_val
-		match ,rsi_val
+macro linux_fn_call name*, args& 
+	iterate arg, args
+		if 1=%
+			mov rdi,arg
+		else if 2=%
+			mov rsi,arg
+		else if 3=%
+			mov rdx,arg
+		else if 4=%
+			mov rcx,arg
+		else if 5=%
+			mov r8,arg
+		else if 6=%
+			mov r9,arg
 		else
-			mov rsi,rsi_val
-			match ,rdx_val
-			else
-				mov rdx,rdx_val
-				match ,rcx_val
-				else
-					mov rcx,rcx_val
-					match ,r8_val
-					else
-						mov r8,r8_val
-						match ,r9_val
-						else
-							mov r9,r9_val
-						end match
-					end match
-				end match
-			end match
-		end match
-	end match
+			assert 0 > %% ; too many arguments
+		end if
+	end iterate 
 	call name
 end macro
 
@@ -94,7 +87,7 @@ public _start ; make _start available to the linker (if it is not public the nam
 _start:
 	linux_fn_call glfwInit
 	
-	linux_fn_call glfwCreateWindow,800,600,title,0,0
+	linux_fn_call glfwCreateWindow,100,600,title,0,0
 	mov [window],rax
 
 	linux_fn_call glfwMakeContextCurrent,[window]
@@ -112,6 +105,8 @@ _start:
 	; loop floats
 	mov r13,1.0
 	mov r14,-1.0
+;	mov rax,0
+;	mov [rax],rax
 
 mainLoop:
 	mov rdi,[window]
