@@ -78,35 +78,33 @@ section '.rodata'
 title:	db "Pong in ASM", 0
 
 section '.bss' writeable
-window: rq 1
-width: rd 1
-height: rd 1
+label window:qword
+	rq 1
+label width:dword
+	rd 1
+label height:dword
+	rd 1
 
 section '.text' executable
 public _start ; make _start available to the linker (if it is not public the name is not kept)
 _start:
 	linux_fn_call glfwInit
 	
-	linux_fn_call glfwCreateWindow,100,600,title,0,0
+	linux_fn_call glfwCreateWindow,500,600,title,0,0
 	mov [window],rax
 
 	linux_fn_call glfwMakeContextCurrent,[window]
 	
 	; clear color values	
-	mov r12,0.0
-	mov r13,0.4
+	mov r12d,0.0
+	mov r13d,0.4
 
-	movq xmm0,r12 ; r
+	movq xmm0,r12; r
 	movq xmm1,r12 ; g
 	movq xmm2,r13 ; b
 	movq xmm3,r12 ; a
 	call glClearColor
 
-	; loop floats
-	mov r13,1.0
-	mov r14,-1.0
-;	mov rax,0
-;	mov [rax],rax
 
 mainLoop:
 	mov rdi,[window]
@@ -114,11 +112,19 @@ mainLoop:
 	lea rdx,[height]
 	call glfwGetFramebufferSize
 	
-	linux_fn_call glViewport,0,0,[width],[height]
+	mov rdi,0
+	mov rsi,0
+	mov edx,[width]
+	mov ecx,[height]
+	call glViewport
 
 	linux_fn_call glClear,GL_COLOR_BUFFER_BIT
 
 	linux_fn_call glBegin,GL_TRIANGLES
+
+	; loop floats
+	mov r13d,1.0
+	mov r14d,-1.0
 
 	movq xmm0, r13
 	movq xmm1, r12
