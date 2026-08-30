@@ -39,7 +39,7 @@ macro linux_syscall number*, args&
 		else if 6=%
 			mov r9,arg
 		else
-			assert 0 > %% ; too many arguments
+			err 'too many arguments',%
 		end if
 	end iterate 
 	syscall
@@ -64,7 +64,7 @@ macro linux_fn_call name*, args&
 		else if 6=%
 			mov r9,arg
 		else
-			assert 0 > %% ; too many arguments
+			err 'too many arguments',%
 		end if
 	end iterate 
 	call name
