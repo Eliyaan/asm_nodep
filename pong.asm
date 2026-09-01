@@ -20,8 +20,7 @@ format ELF64
 
 iterate extern_name,\
 	XOpenDisplay, XCreateSimpleWindow, XMapWindow, XCreateImage, XDestroyWindow, XDefaultRootWindow,\
-	XCreateGC, XFlush, XPutImage, XDefaultVisual, XSelectInput,\
-	XDrawLine
+	XCreateGC, XFlush, XPutImage, XDefaultVisual, XSelectInput
 	extrn extern_name 
 end iterate
 
@@ -82,18 +81,27 @@ end macro
 section '.rodata' 
 title:	db "Pong in ASM", 0
 label screen_buf_h 		: dword ; screen height
-	dd 100
+	dd 700
 label screen_buf_w 		: dword ; screen width
-	dd 200
+	dd 1300
 label bytes_per_line		: dword ; How many bytes a line takes in the buffer for the screen (screen_buf)
-	dd 200 * bytes_per_pixel	; w * byte_depth
+	dd 1300 * bytes_per_pixel	; w * byte_depth
 
-section '.data' 
+section '.data' writeable 
 thingy:	db "Pong in ASM", 0
 label screen_buf		: qword ; the software rendering screen
-	repeat 200*100*bytes_per_pixel	; w * h * byte_depth
-		db 0xFF
+	repeat 1300*300			; w * h
+		dd 0x0000FF00 		; 00RRGGBB
 	end repeat
+	repeat 1300*400			; w * h
+		dd 0x00FF0000 		; 00RRGGBB
+	end repeat
+label sleepframe		: qword ; struct timespec (meant to be passed as a pointer) for nanosleep syscall
+	dq 0				; 0s
+	dq 1_000_000*16			; 16ms
+label cpu_basefreq		: qword ; base frequency of the CPU in Hz
+	dq 2_000_000_000		;(for RDTSC calculations)
+
 
 section '.bss' writeable
 label X11_display		: qword ; Identifier for the app to talk with the X Server
@@ -108,6 +116,10 @@ label X11_root_window		: dword ; Root window ID
 	rd 1
 label X11_graphics_context	: dword ; Graphics context ID 
 	rd 1
+label old_tsc			: qword ; value read of RDTSC
+	rq 1
+label debug 			: qword ;
+	rq 1
 
 section '.text' executable
 public _start ; make _start available to the linker (if it is not public the name is not kept)
@@ -134,8 +146,8 @@ _start:
 	push rax			; border
 	mov eax , 0
 	push rax			; border_width
-	mov r9d , 400			; height
-	mov r8d , 600			; width
+	mov r9d , 700			; height
+	mov r8d , 1300			; width
 	mov ecx , 0			; y
 	mov edx , 0			; x
 	mov esi , [X11_root_window]	; parent window 
@@ -159,22 +171,23 @@ _start:
 	mov rdi , [X11_display]
 	call XMapWindow
 
-;	mov eax , [bytes_per_line]
-;	push rax
-;	mov eax , bits_per_pixel	; bitmap_pad
-;	push rax
-;	mov eax , [screen_buf_h]
-;	push rax
-;	mov eax , [screen_buf_w]
-;	push rax
-;	lea r9d , [screen_buf]		; data
-;	mov r8d , 0			; offset 
-;	mov ecx , ZPixmap		; format (ZPixmap is the default)
-;	mov edx , bits_per_pixel	; depth (bits per pixel)
-;	mov rsi , [X11_default_visual]
-;	mov rdi , [X11_display]
-;	call XCreateImage
-;	mov [X11_screen_image] , rax
+	mov eax , [bytes_per_line]
+	push rax
+	mov eax , bits_per_pixel		; bitmap_pad
+	push rax
+	mov eax , [screen_buf_h]
+	push rax
+	mov eax , [screen_buf_w]
+	push rax
+	lea r9d , [screen_buf]			; data
+	mov r8d , 0				; offset 
+	mov ecx , ZPixmap			; format (ZPixmap is the default)
+	mov edx , 24				; depth of the screen (not depth of the buffer) (bits per pixel)
+	mov rsi , [X11_default_visual]
+	mov rdi , [X11_display]
+	call XCreateImage
+	mov [X11_screen_image] , rax
+
 mainLoop:
 
 ; TODO
@@ -187,34 +200,44 @@ mainLoop:
 ;		  break;
  ;     }
 
-;	mov rax , 300
-;	push rax			; height
-;	push rax			; width
-;	mov rax , 0
-;	push rax			; dest_y
-;	push rax			; dest_x
-;	mov r9d , 0			; src_y
-;	mov r8d , 0			; src_x
-;	mov rcx , [X11_screen_image]
-;	mov edx , [X11_graphics_context]
-;	mov esi , [X11_window]
-;	mov rdi , [X11_display]
-;	call XPutImage
-
-	mov eax , 0			
-	push rax			; padding to align the stack to 16 bytes
-	mov eax , 20
-	push rax
-	mov r9d , 180
-	mov r8d , 60
-	mov ecx , 10
+	mov rax , 700
+	push rax			; height
+	mov rax , 1300
+	push rax			; width
+	mov rax , 0
+	push rax			; dest_y
+	push rax			; dest_x
+	mov r9d , 0			; src_y
+	mov r8d , 0			; src_x
+	mov rcx , [X11_screen_image]
 	mov edx , [X11_graphics_context]
 	mov esi , [X11_window]
 	mov rdi , [X11_display]
-	call XDrawLine
+	call XPutImage
 	
 	mov rdi , [X11_display]
 	call XFlush
+
+	; 0_016_000_000 - (RDTSC_delta * 1_000_000_000 / cpu_basefreq)
+	rdtsc
+	shl rdx , 32
+	or rax , rdx
+	mov rdx , [old_tsc]
+	mov [old_tsc] , rax
+	sub rax , rdx	 		; delta TSC of the frame
+	mov rcx , 1_000_000_000
+	mul rcx				; rax * rcx 
+	mov rcx , [cpu_basefreq]
+	xor rdx , rdx			; rdx is the upper part of the dividend
+	div rcx
+	mov rdx	, 16_000_000		; 16ms in ns
+	sub rdx , rax			; rdx : how many ns to sleep for 60fps
+	mov [sleepframe+8] , rdx	
+
+	mov rax , 35 			; nanosleep
+	lea rdi , [sleepframe]
+	mov rsi , 0
+	syscall				; TODO: adapt sleeptime to remaining frametime
 
 	jmp mainLoop
 
@@ -230,3 +253,21 @@ mainLoop:
 
 
 
+
+
+;	mov edx , 0x00ffffff		; 0x00ffffff is white
+;	mov esi , [X11_graphics_context]
+;	mov rdi , [X11_display]
+;	call XSetForeground
+
+;	mov eax , 0			
+;	push rax			; padding to align the stack to 16 bytes
+;	mov eax , 20
+;	push rax
+;	mov r9d , 180
+;	mov r8d , 60
+;	mov ecx , 10
+;	mov edx , [X11_graphics_context]
+;	mov esi , [X11_window]
+;	mov rdi , [X11_display]
+;	call XDrawLine
