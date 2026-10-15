@@ -89,18 +89,19 @@ label bytes_per_line		: dword ; How many bytes a line takes in the buffer for th
 
 section '.data' writeable 
 thingy:	db "Pong in ASM", 0
-label screen_buf		: qword ; the software rendering screen
-	repeat 1300*300			; w * h
-		dd 0x0000FF00 		; 00RRGGBB
-	end repeat
-	repeat 1300*400			; w * h
-		dd 0x00FF0000 		; 00RRGGBB
-	end repeat
 label sleepframe		: qword ; struct timespec (meant to be passed as a pointer) for nanosleep syscall
 	dq 0				; 0s
-	dq 1_000_000*16			; 16ms
-label cpu_basefreq		: qword ; base frequency of the CPU in Hz
+	dq 16_000_000			; 16ms
+label cpu_basefreq		: qword ; base frequency of the CPU in Hz ; TODO get that with CPUID
 	dq 2_000_000_000		;(for RDTSC calculations)
+label ns_frame_target		: dword ; how many ns is the target of a frame
+	dd 16_000_000
+label rising			: byte
+	db 0
+label timing_text		: byte
+	db 'A','B','C','.','A','B','C','m','s'
+;label font			: byte
+;	file 'monogram'
 
 
 section '.bss' writeable
@@ -110,20 +111,40 @@ label X11_default_visual	: qword ; Pointer to default visual
 	rq 1
 label X11_screen_image 		: qword ; Pointer to image used for the screen
 	rq 1
+label startframe_tsc		: qword ; value read of RDTSC
+	rq 1
+label old_startframe_tsc	: qword ; previous frame value read of RDTSC
+	rq 1
+label old_frame_time		: qword ; previous RDTSC clock time elasped to process the frame
+	rq 1
+label debug 			: qword ;
+	rq 1
 label X11_window		: dword ; Window ID 
 	rd 1
 label X11_root_window		: dword ; Root window ID 
 	rd 1
 label X11_graphics_context	: dword ; Graphics context ID 
 	rd 1
-label old_tsc			: qword ; value read of RDTSC
-	rq 1
-label debug 			: qword ;
-	rq 1
+label screen_buf		: qword ; the software rendering screen ; TODO allocate this on app startup
+	rd 1300*700			; w * h
 
 section '.text' executable
 public _start ; make _start available to the linker (if it is not public the name is not kept)
 _start:
+
+	rdtsc
+	shl rdx , 32
+	or rax , rdx
+	mov [startframe_tsc] , rax
+
+	mov eax , [screen_buf_h]
+	mov ecx , [screen_buf_w]
+	mul ecx
+	loop_init_screen:
+	mov dword [screen_buf + eax * 4] , 0x000000FF
+	dec eax
+	cmp eax , 0
+	jge loop_init_screen	
 
 	mov rdi , 0
 	call XOpenDisplay
@@ -189,6 +210,14 @@ _start:
 	mov [X11_screen_image] , rax
 
 mainLoop:
+	mov rax , [startframe_tsc]
+	mov [old_startframe_tsc] , rax
+	rdtsc
+	shl rdx , 32
+	or rax , rdx
+	mov [startframe_tsc] , rax
+
+; TODO take focus when mapped
 
 ; TODO
 ;      // Wait for the MapNotify event
@@ -199,6 +228,44 @@ mainLoop:
 ;	    if (e.type == MapNotify)
 ;		  break;
  ;     }
+
+
+
+
+	mov ebx , dword [screen_buf]
+	cmp [rising] , 0
+	je decrease_lum
+	inc ebx
+	cmp ebx , 255
+	jne end_lum
+	mov [rising] , 0
+	jmp end_lum
+	decrease_lum:
+	dec ebx
+	jnz end_lum
+	mov [rising] , 1
+	end_lum:
+	mov eax , [screen_buf_h]
+	mov ecx , [screen_buf_w]
+	mul ecx
+	loop_update_screen:
+	mov dword [screen_buf + eax * 4] , ebx
+	dec eax
+	cmp eax , 0
+	jge loop_update_screen
+
+	mov rax , [old_frame_time]
+	call clocktime_to_ns
+	call show_ns_to_screen_in_timing_frame
+	
+	mov rax , [startframe_tsc]
+	sub rax , [old_startframe_tsc]
+	call clocktime_to_ns
+	call show_ns_to_screen_in_timing_frame
+	
+	
+	
+
 
 	mov rax , 700
 	push rax			; height
@@ -214,7 +281,7 @@ mainLoop:
 	mov esi , [X11_window]
 	mov rdi , [X11_display]
 	call XPutImage
-	
+
 	mov rdi , [X11_display]
 	call XFlush
 
@@ -222,22 +289,18 @@ mainLoop:
 	rdtsc
 	shl rdx , 32
 	or rax , rdx
-	mov rdx , [old_tsc]
-	mov [old_tsc] , rax
+	mov rdx , [startframe_tsc]
 	sub rax , rdx	 		; delta TSC of the frame
-	mov rcx , 1_000_000_000
-	mul rcx				; rax * rcx 
-	mov rcx , [cpu_basefreq]
-	xor rdx , rdx			; rdx is the upper part of the dividend
-	div rcx
-	mov rdx	, 16_000_000		; 16ms in ns
+	mov [old_frame_time] , rax
+	call clocktime_to_ns		; convert delta TSC to delta nanoseconds	
+
+	mov edx	, [ns_frame_target]
 	sub rdx , rax			; rdx : how many ns to sleep for 60fps
 	mov [sleepframe+8] , rdx	
-
 	mov rax , 35 			; nanosleep
 	lea rdi , [sleepframe]
 	mov rsi , 0
-	syscall				; TODO: adapt sleeptime to remaining frametime
+	syscall				
 
 	jmp mainLoop
 
@@ -248,8 +311,47 @@ mainLoop:
 	linux_syscall_exit 0 
 
 	
+; input rax = clock ticks
+; output rax = converted to ns 
+; written registers : rdx, rcx
+clocktime_to_ns:
+	mov rcx , 1_000_000_000
+	xor rdx , rdx			; rdx is the upper part of the RDX:RAX first operand
+	mul rcx				; rax * rcx 
+	mov rcx , [cpu_basefreq]
+	xor rdx , rdx			; rdx is the upper part of the dividend
+	div rcx
+	ret
 
-
+; input rax = ns ticks
+; written registers : rdx, rcx
+show_ns_to_screen_in_timing_frame:
+	; convert ns to us
+	xor rdx , rdx
+	mov rcx , 1000
+	div rcx
+	; get the digits
+	mov rcx , 10
+	xor rdx , rdx
+	div rcx
+	mov [timing_text+6] , dl
+	xor rdx , rdx
+	div rcx
+	mov [timing_text+5] , dl
+	xor rdx , rdx
+	div rcx
+	mov [timing_text+4] , dl
+	xor rdx , rdx
+	div rcx
+	mov [timing_text+2] , dl
+	xor rdx , rdx
+	div rcx
+	mov [timing_text+1] , dl
+	xor rdx , rdx
+	div rcx
+	mov [timing_text] , dl
+	; TODO display time with font on screen
+	ret
 
 
 

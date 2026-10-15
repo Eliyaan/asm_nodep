@@ -1,3 +1,6 @@
 pong.rdi
 pong.o
 pong
+bmp_reader
+bmp_reader.o
+bmp_reader.rdi
